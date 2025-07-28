@@ -14,7 +14,11 @@ library(mgcv)
 library(viridis)
 library(dplyr)
 
-### --- 2. Functions to simulate and fit --- ####
+
+### --- 2. Loading the functions for computing R2 --- ####
+source("functions/bayes_R2.R")
+
+### --- 3. Functions to simulate and fit --- ####
 simulation <- function(beta = matrix(c(-1, 1, 2 ,1), byrow = TRUE, ncol = 2), 
                        sigma = c(10, 9), 
                        rho   = 0.9,
@@ -107,7 +111,7 @@ fit <- function(data, covariate = TRUE, formula1 = "x1 + x2")
 
 
 
-### --- 3. Simulating the data --- ####
+### --- 4. Simulating the data --- ####
 #We fixed the variance-covariance function, and we modify the covariate $x$. 
 #Then, we see how the R-squared works.
 
