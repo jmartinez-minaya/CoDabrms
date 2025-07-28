@@ -28,6 +28,10 @@ bayes_R2.CoDa <- function(model1, type = "like", resp_names = NULL)
   {
     # Residual fit
     sigma2 <- as.matrix(model1, pars = c("sigma"))^2
+    # sigma2 <- posterior::as_draws_matrix(model1)[,"sigma"]^2
+    # 
+    # sigma2 <- as.matrix(model1, variable = "sigma")^2
+    
     var_res <- apply(sigma2, 1, sum)
   } else{
     dim(y_pred)

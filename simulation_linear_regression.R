@@ -171,14 +171,10 @@ p_data <- ggtern(data = data_p, aes(x = y1, y = y2, z = y3,
 p_data
 
 
-# pdf("figures/data_linear_regression.pdf", width = 6, height = 5)
-# p_data
-# dev.off()
 ### --- 4. Fitting the models --- ####
 #We fit model with all the covariates
 mod_test3_1 <- fit(data = data_test3, 
                    formula1 = "x1 + x2 + x3")
-#mod_test3_2 <- fit(data = data_test3, formula1 = "x1 + x2")
 mod_test3_3 <- fit(data = data_test3, 
                    formula1 = "x1 + x2")
 #mod_test3_4 <- fit(data = data_test3, formula1 = "x1 + x3")
@@ -186,17 +182,12 @@ mod_test3_5 <- fit(data = data_test3,
                    formula1 = "x1")
 mod_test3_6 <- fit(data = data_test3, 
                    formula1 = "x2")
-# mod_test3_7 <- fit(data = data_test3, formula1 = "x3")
-
-summary(mod_test3_5)
-summary(mod_test3_6)
 
 
 #Covariate with noise
 set.seed(20)
 data_test3$x3 <- rnorm(n)
 mod_test3_8 <- fit(data = data_test3, formula1 = "x1 + x2 + x3")
-#mod_test3_9 <- fit(data = data_test3, formula1 = "x1 + x3")
 mod_test3_10 <- fit(data = data_test3, formula1 = "x3")
 
 ### --- 5. Computing the R-squared --- ####
@@ -205,16 +196,8 @@ m1 <- 6
 list_mod %>%
   sapply(., bayes_R2.CoDa) %>%
   as.data.frame() %>%
-  tidyr::pivot_longer(., cols = 1:m1,  names_to = "fit", values_to = "R_squared")-> r_squared
+  tidyr::pivot_longer(., cols = all_of(1:m1),  names_to = "fit", values_to = "R_squared")-> r_squared
 
-
-####################3
-
-# summary(mod_test3_1)
-# summary(mod_test3_8)
-# summary(mod_test3_3)
-# summary(mod_test3_5)
-# summary(mod_test3_10)
 
 r_squared$fit <- as.factor(r_squared$fit)
 levels(r_squared$fit) <- paste0("M", 1:m1)
@@ -246,37 +229,6 @@ r_squared_res %>%
 r_squared_res %>%
   group_by(fit) %>%
   summarise(sd = sd(R_squared)) -> r_squared_res_sd
-
-#Plotting
-# p1 <- r_squared %>%
-#   ggplot( aes(x = R_squared, fill = fit, y = ..density..)) +
-#   geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', bins = 100) +
-#   theme_bw() +
-#   labs(fill="") +
-#   #theme(legend.position="bottom") +
-#   xlim(c(0,1.01)) +
-#   xlab("CoDa-R-squared")
-# 
-# 
-# 
-# p2 <- r_squared_res %>%
-#   ggplot( aes(x = R_squared, fill = fit, y = ..density..)) +
-#   geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', bins = 100) +
-#   theme_bw() +
-#   labs(fill="") +
-#   theme(legend.position="bottom") +
-#   xlim(c(0, 1.01)) +
-#   xlab("CoDa-R-squared")
-# 
-# 
-# g_legend<-function(a.gplot){
-#   tmp <- ggplot_gtable(ggplot_build(a.gplot))
-#   leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
-#   legend <- tmp$grobs[[leg]]
-#   return(legend)}
-# 
-# mylegend<-g_legend(p2)
-
 
 #Join both r-squared
 r_squared <- cbind(r_squared_res, r_sq = "r_sq_res") %>% rbind(., cbind(r_squared, r_sq = "r_sq_var"))
@@ -321,93 +273,16 @@ p1 <- r_squared %>%
 
 p1
 
-# pdf("figures/r-squared_sim_linear_regression.pdf", width = 10, height = 6)
-# p1 
-# dev.off()
-
-
 
 
 
 ### --- 6. Computing waic --- ####
-# loo_res <- list_mod %>%
-#   pbsapply(., function(x){
-#     loo1 <- loo::loo(x)
-#     loo1$estimates[3,1]
-#   })
-   
-
 waic_res <- list_mod %>%
   pblapply(., function(x){
     waic1 <- waic(x)
     waic1
   })
 waic_res1 <- waic_res %>% sapply(., function(x) x$estimates[3]) %>% round(., 3) 
-
-### --- 6. Plotting posterior distributions --- ####
-## Checking recovering of the posterior distributions
-#We use the first model of test1
-
-fit1 <- mod_test3_1
-fit1
-
-### ----- 6.1. Intercepts --- ####
-data_plot <- fit1 %>%
-  gather_draws(b_yilr1_Intercept, b_yilr2_Intercept, b_yilr3_Intercept) 
-colnames(data_plot) <- c("chain", "iteration", "draw", "variable_p",  "value_p")
-
-values_plot <- data.frame(values_int = betas[seq(1,length(betas), 4)], variable_p = c("b_yilr1_Intercept",  "b_yilr2_Intercept", "b_yilr3_Intercept"))
-
-ggplot(data = data_plot) +
-  geom_histogram(aes(x = value_p, y = ..density.., group = variable_p),
-                 color = "#e9ecef", alpha=0.6, position = 'identity', bins = 30, fill = "cornflowerblue") +
-  theme_bw() +
-  geom_vline(data = values_plot, aes(xintercept = values_int), 
-             color = "blue4", size=1) +
-  facet_wrap( ~ variable_p)
-
-fit1 <- mod_test3_1
-fit1
-
-### ----- 6.2. Fixed effects --- ####
-data_plot <- fit1 %>%
-  gather_draws(b_yilr1_x1, b_yilr1_x2, b_yilr1_x3, 
-               b_yilr2_x1, b_yilr2_x2, b_yilr2_x3,
-               b_yilr3_x1, b_yilr3_x2, b_yilr3_x3) 
-colnames(data_plot) <- c("chain", "iteration", "draw", "variable_p",  "value_p")
-
-values_plot <- data.frame(values_int = betas[-seq(1,12, 4)], variable_p = as.vector(outer(paste0("b_yilr", 1:3), paste0("_x", 1:3), paste, sep="")) %>% 
-                            matrix(., ncol = 3) %>% t() %>% as.character())
-
-ggplot(data = data_plot) +
-  geom_histogram(aes(x = value_p, y = ..density.., group = variable_p),
-                 color = "#e9ecef", alpha=0.6, position = 'identity', bins = 15, fill = "cornflowerblue") +
-  theme_bw() +
-  facet_wrap( ~ variable_p, scales="free") +
-  geom_vline(data = values_plot, aes(xintercept = values_int),
-             color = "blue4", size=1) 
-
-### ----- 6.3. Correlation parameters --- ####
-
-get_variables(fit1)
-#correlation parameters
-data_plot <- fit1 %>%
-  gather_draws(sigma_yilr1, sigma_yilr2, sigma_yilr3, rescor__yilr1__yilr2,
-               rescor__yilr1__yilr3, rescor__yilr2__yilr3)  
-colnames(data_plot) <- c("chain", "iteration", "draw", "variable_p",  "value_p")
-
-values_plot <- data.frame(values_int = c(sigma, rho), variable_p = c(paste0("sigma_yilr", 1:3), 
-                                                                     "rescor__yilr1__yilr2", 
-                                                                     "rescor__yilr1__yilr3",
-                                                                   "rescor__yilr2__yilr3"))
-
-ggplot(data = data_plot) +
-  geom_histogram(aes(x = value_p, y = ..density.., group = variable_p),
-                 color = "#e9ecef", alpha=0.6, position = 'identity', bins = 15, fill = "cornflowerblue") +
-  theme_bw() +
-  facet_wrap( ~ variable_p, scales="free") +
-  geom_vline(data = values_plot, aes(xintercept = values_int),
-             color = "blue4", size=1) 
 
 
 
@@ -543,13 +418,5 @@ cbind(all_mod, probs_br = round(probs_br,3),
       probs_bm = round(probs_bm,3))
 
 
-
-(m_sim_bm[[all_mod[1,1]]] > m_sim_bm[[all_mod[1,2]]]) %>% 
-  table(.)/10000
-hist(m_sim_bm[[all_mod[7,1]]])
-hist(m_sim_bm[[all_mod[7,2]]])
-
-(m_sim_bm[[all_mod[7,1]]] > m_sim_bm[[all_mod[7,2]]]) %>% 
-  table(.)
 
 
