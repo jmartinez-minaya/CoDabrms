@@ -455,84 +455,107 @@ mod_spline_6 <- fit_spline(data = data_spline,
                            formula1 = "t2(x_s2, x_s3, m = 2, k = 5, bs = 'ps') + s(x_s1, bs = 'ps', k = 5)")    
 
 
-### --- 7. Computing R-squared --- ####
+
+### --- 7. Computing R-squared and WAIC --- ####
 rm(var)
 source("functions/bayes_R2.R")
 m1 <- 6
+
+# List of models
 list_mod <- list(mod_spline_1, mod_spline_6, mod_spline_3, mod_spline_5,
-                 mod_spline_2, mod_spline_4) 
-list_mod  %>%
+                 mod_spline_2, mod_spline_4)
+
+# --- BM-CoDa-R²: Based on variance ---
+list_mod %>%
   sapply(., bayes_R2.CoDa, resp_names = c("yilr1", "yilr2")) %>%
   as.data.frame() %>%
-  tidyr::pivot_longer(., cols = 1:6,  names_to = "fit", values_to = "R_squared")-> r_squared
-
-
+  tidyr::pivot_longer(cols = 1:m1, names_to = "fit", values_to = "R_squared") -> r_squared
 
 r_squared$fit <- as.factor(r_squared$fit)
 levels(r_squared$fit) <- paste0("M", 1:m1)
 
 r_squared %>%
   group_by(fit) %>%
-  summarise(m = mean(R_squared)) -> r_squared_mean
+  summarise(
+    m = mean(R_squared),
+    sd = sd(R_squared)
+  ) -> r_squared_mean
 
-
-r_squared %>%
-  group_by(fit) %>%
-  summarise(m = mean(R_squared)) -> r_squared_mean
-
-# Based on residuals
+# --- BR-CoDa-R²: Based on residuals ---
 list_mod %>%
   sapply(., bayes_R2.CoDa, type = "res") %>%
   as.data.frame() %>%
-  tidyr::pivot_longer(., cols = 1:m1,  names_to = "fit", values_to = "R_squared")-> r_squared_res
+  tidyr::pivot_longer(cols = 1:m1, names_to = "fit", values_to = "R_squared") -> r_squared_res
 
 r_squared_res$fit <- as.factor(r_squared_res$fit)
 levels(r_squared_res$fit) <- paste0("M", 1:m1)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 r_squared_res %>%
   group_by(fit) %>%
-  summarise(m = mean(R_squared)) -> r_squared_res_mean
+  summarise(
+    m = mean(R_squared),
+    sd = sd(R_squared)
+  ) -> r_squared_res_mean
 
+# --- Combine all R² values ---
+r_squared_all <- cbind(r_squared_res, r_sq = "r_sq_res") %>%
+  rbind(., cbind(r_squared, r_sq = "r_sq_var"))
 
+r_squared_all$r_sq <- factor(r_squared_all$r_sq,
+                             levels = c("r_sq_res", "r_sq_var"),
+                             ordered = TRUE,
+                             labels = c(expression(paste("BR-CoDa-", R^2)),
+                                        expression(paste("BM-CoDa-", R^2))))
 
-#Join both r-squared
-r_squared <- cbind(r_squared_res, r_sq = "r_sq_res") %>% rbind(., cbind(r_squared, r_sq = "r_sq_var"))
-# r_squared$fit <- factor(r_squared_res$fit, labels = c(paste0("M", 1:m1)),
-#                             levels = c(paste0("V", 1:m1)))
-r_squared$r_sq <- factor(r_squared$r_sq, 
-                         levels = c("r_sq_res", "r_sq_var"),
-                         ordered = TRUE,
-                         labels = c(expression(paste("BR-CoDa-", R^2)), expression(paste("BM-CoDa-", R^2))))
+# --- Combine mean and SD summaries ---
+r_squared_mean_data <- rbind(
+  cbind(r_squared_res_mean, r_sq = 1),
+  cbind(r_squared_mean, r_sq = 2)
+)
 
-
-
-r_squared_mean_data <- rbind(cbind(r_squared_res_mean, r_sq = 1),
-                             cbind(r_squared_mean, r_sq = 2))
-
-r_squared_mean_data$r_sq <- factor(r_squared_mean_data$r_sq, 
+r_squared_mean_data$r_sq <- factor(r_squared_mean_data$r_sq,
                                    levels = c(1, 2),
                                    ordered = TRUE,
-                                   labels = c(expression(paste("BR-CoDa-", R^2)), 
+                                   labels = c(expression(paste("BR-CoDa-", R^2)),
                                               expression(paste("BM-CoDa-", R^2))))
 
+r_squared_mean_data$fit <- as.factor(r_squared_mean_data$fit)
+levels(r_squared_mean_data$fit) <- paste0("M", 1:m1)
+
+# --- Compute WAIC for each model ---
+waic_res <- list_mod %>%
+  pblapply(., function(x) {
+    waic(x)
+  })
+
+waic_res1 <- waic_res %>%
+  sapply(., function(x) x$estimates["waic", "Estimate"]) %>%
+  round(., 3)
+
+# --- Format BR and BM R² as mean (SD) strings ---
+BR_values <- paste0(
+  round(r_squared_mean_data$m[1:m1], 3),
+  " (", round(r_squared_mean_data$sd[1:m1], 3), ")"
+)
+
+BM_values <- paste0(
+  round(r_squared_mean_data$m[(m1 + 1):(2 * m1)], 3),
+  " (", round(r_squared_mean_data$sd[(m1 + 1):(2 * m1)], 3), ")"
+)
+
+# --- Final table combining all results ---
+total_models <- data.frame(
+  Model = paste0("M", 1:m1),
+  WAIC  = waic_res1,
+  BR    = BR_values,
+  BM    = BM_values
+)
+
+# Display table (optional)
+xtable::xtable(total_models, digits = 3)
 
 
-r_squared_mean_data
+### --- 8. Plotting R-squared --- ####
 p1 <- r_squared %>%
   ggplot( aes(x = R_squared, fill = fit, y = ..density..)) +
   geom_histogram( color="#e9ecef", alpha = 0.9, position = 'identity', bins = 150)+ 
@@ -552,48 +575,21 @@ p1 <- r_squared %>%
 
 p1
 
-pdf("figures/r-squared_sim_splines.pdf", width = 10, height = 6)
+pdf("r-squared_sim_splines.pdf", width = 10, height = 6)
 p1 
 dev.off()
 
 
 
 
-### --- 6. Computing WAIC --- ####
-waic_res <- list_mod %>%
-  pblapply(., function(x){
-    waic1 <- waic(x)
-    waic1
-  })
-waic_res %>% sapply(., function(x) x$estimates[3]) %>% round(., 3)
-
-
-
-### --- 8. Prior summary --- ####
-prior_summary(mod_spline_1)
-
-### --- 10. Table for models --- ####
-r_squared_mean_data
-#loo_res1 <- loo_res %>% sapply(., function(x) x$estimates[3]) %>% round(., 3)
-waic_res1 <- waic_res %>% sapply(., function(x) x$estimates[3]) %>% round(., 3)
-
-
-#sapply(list_mod, function(x){x[[1]][[1]][[1]][[1]]}) %>% unlist(.)
-total_models <- data.frame(Model = r_squared_mean_data$fit[1:6],
-                           waic   = waic_res1, 
-                           BR    = r_squared_mean_data[1:6, c("m")],
-                           BM    = r_squared_mean_data[7:12, c("m")])
-
-xtable::xtable(total_models, digits = 3)
-
-### --- 11. Computing probabilities to compare --- ####
-lapply(paste0("M", 1:6), function(x){ r_squared %>% 
+### --- 9. Computing probabilities to compare --- ####
+lapply(paste0("M", 1:6), function(x){ r_squared_all %>% 
     dplyr::filter(fit == x) %>%
     dplyr::filter(r_sq == 'paste("BR-CoDa-", R^2)') %>%
     dplyr::select(R_squared) %>% pull(.)
 }) -> m_sim_br
 
-lapply(paste0("M", 1:6), function(x){ r_squared %>% 
+lapply(paste0("M", 1:6), function(x){ r_squared_all %>% 
     dplyr::filter(fit == x) %>%
     dplyr::filter(r_sq == 'paste("BM-CoDa-", R^2)') %>%
     dplyr::select(R_squared) %>% pull(.)
