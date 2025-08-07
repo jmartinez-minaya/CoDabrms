@@ -8,15 +8,13 @@ library(dplyr)
 library(MASS)
 library(brms)
 library(ggplot2)
-#library(hrbrthemes)
 library(brms)
 library(pbapply)
-#library(compbrms)
 library(gridExtra)
 library(tidybayes)
 library(mgcv)
 library(viridis)
-
+library(patchwork)
 
 ### --- 2. Functions to simulate and fit --- ####
 
@@ -175,8 +173,11 @@ p3_data
 
 
 
+
+
+
 set.seed(10)
-source("r/gamSim2.R")
+source("functions/gamSim2.R")
 sim22 <- gamSim2(eg=2, n = n, dist="normal", scale=300, verbose = TRUE)
 contour(sim22$truth$x, sim22$truth$z, sim22$truth$f)
 sim22_center11 <- sim22$truth$f - mean(sim22$truth$f)
@@ -209,8 +210,6 @@ data_spline <- simulation_spline(beta = matrix(betas, byrow = TRUE, ncol = dim(x
 
 
 data_spline$x1
-#plot(data_spline$x_s1, data_spline$yilr2)
-
 data_p <- data_spline[,c("yilr1", "yilr2")] %>% 
   compositions::ilrInv(.) %>%
   .[,1:3] %>% as.data.frame(.)*100
@@ -246,15 +245,13 @@ dev.off()
 
 ### --- 4. Fitting --- ####
 mod_spline_1 <- fit_spline(data = data_spline, 
-                    #formula1 = "s(x_s1, bs = 'ps', k = 10)")
-                   # formula1 = "t2(x_s2, x_s3, m = 2, k = 10, bs = 'ps')")
                     formula1 = "-1 + t2(x_s2, x_s3, m = 2, k = 10, bs = 'ps') + s(x_s1, bs = 'ps', k = 10)")
 
 summary(mod_spline_1)
 loo1 <- loo::loo(mod_spline_1, moment_match = TRUE, reloo = TRUE)
-saveRDS(mod_spline_1, "rds/simulation_mod1_spline.rds")
+#saveRDS(mod_spline_1, "rds/simulation_mod1_spline.rds")
 
-pdf("figures/fitting_splines.pdf")
+pdf("fitting_splines.pdf")
 print(plot(conditional_smooths(mod_spline_1), ask = FALSE))
 dev.off()
 
@@ -262,7 +259,7 @@ dev.off()
 ### --- 5. Posterior distributions --- ####
 ### ----- 5.1. Posterior distributions: one dimension --- ####
 
-source("r/posterior_smooths_plot.R")
+source("functions/posterior_smooths_plot.R")
 p1 <- posterior_smooths_plot(mod = mod_spline_1,
                              smooth = 's(x_s1,bs="ps",k=10)',
                              resp = "yilr1",
@@ -285,13 +282,9 @@ summary(mod_spline_1)
 p1 <- p1 + geom_point(data = sim1, aes(x = x_s1, y = sim11), size = 0.5)
 p2 <- p2 + geom_point(data = sim1, aes(x = x_s1, y = sim12), size = 0.5)
 
-png("figures/spline_ilr1.png", width = 1000, height = 700, res = 150)
+pdf("spline_ilr1.pdf", width = 8, height = 5)
+p1 / p2 +   plot_annotation(tag_levels = 'a') 
 
-grid.arrange(p1, p2)
-dev.off()
-
-pdf("figures/spline_ilr1.pdf", width = 8, height = 5)
-grid.arrange(p1, p2)
 dev.off()
 
 ### ----- 5.2. Posterior distributions: two dimensions --- ####
@@ -312,52 +305,42 @@ p4 <- posterior_smooths_plot(mod = mod_spline_1,
                              lab.z  = expression(paste(t^2, "(", xs[2],",", xs[3], ")")))
 
 
-p3_data <- p3_data + scale_fill_viridis(name = c("yilr1.t(xs2, xs3)"),
-                             limits = c(min(p3[[2]][1], sim2$sim21 -0.05), 
-                                        max(p3[[2]][2], sim2$sim21 +0.05)))
 
-p4_data <- p4_data + scale_fill_viridis(name = c("yilr2.t(xs2, xs3)"),
-                             limits = c(min(p3[[2]][1], sim2$sim22)-0.05, 
-                                        max(p3[[2]][2], sim2$sim22)+0.05))
+# Calcular rango común con margen
+common_min <- min(p3[[2]][1], p4[[2]][1], sim2$sim21, sim2$sim22) - 0.05
+common_max <- max(p3[[2]][2], p4[[2]][2], sim2$sim21, sim2$sim22) + 0.05
+common_limits <- c(common_min, common_max)
+
+# Escala común para todos los gráficos
+shared_scale <- scale_fill_viridis(name = "", limits = common_limits)
+
+# Aplicar a los cuatro gráficos
+p3_data <- p3_data +  theme(legend.position="bottom",
+                            panel.background = element_blank(),
+                            legend.key.height = unit(0.4, "cm"),
+                            legend.key.width = unit(2, "cm")) + shared_scale
+p4_data <- p4_data + theme(legend.position="bottom",
+                           panel.background = element_blank(),
+                           legend.key.height = unit(0.4, "cm"),
+                           legend.key.width = unit(2, "cm")) + shared_scale
+p3[[1]] <- p3[[1]] + shared_scale
+p4[[1]] <- p4[[1]] + shared_scale
 
 
-# Plotting together
-#Plotting with common legend
-g_legend <- function(a.gplot) {
-  tmp <- ggplot_gtable(ggplot_build(a.gplot))
-  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
-  legend <- tmp$grobs[[leg]]
-  return(legend) }
 
-mylegend <- g_legend(p3[[1]])
-mylegend2 <- g_legend(p4[[1]])
 
-png("figures/spline_ilr2.png", width = 1400, height = 1250, res = 130)
-grid.arrange(arrangeGrob(p3_data + theme(legend.position = "none"),
-                         p3[[1]] + theme(legend.position = "none"),
-                         nrow = 1),
-             mylegend,
-             arrangeGrob(p4_data + theme(legend.position = "none"),
-                         p4[[1]] + theme(legend.position = "none"),
-                         nrow = 1),
-             mylegend2,
-             nrow = 4, ncol = 1, heights = c(5, 1, 5, 1))
+
+pdf("spline_ilr2.pdf", width = 8, height = 7)
+(p3_data | p3[[1]]) /
+  (p4_data | p4[[1]]) +
+  plot_annotation(tag_levels = "a") +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 dev.off()
 
-pdf("figures/spline_ilr2.pdf", width = 8, height = 7)
-grid.arrange(arrangeGrob(p3_data + theme(legend.position = "none"),
-                         p3[[1]] + theme(legend.position = "none"),
-                         nrow = 1),
-             mylegend,
-             arrangeGrob(p4_data + theme(legend.position = "none"),
-                         p4[[1]] + theme(legend.position = "none"),
-                         nrow = 1),
-             mylegend2,
-             nrow = 4, ncol = 1, heights = c(6, 1, 6, 1))
-dev.off()
 
-b <- summary(mod_spline_1)
-b$spec_pars
+
+
 
 ### ----- 5.3. Posterior distributions: fixed effect intercept --- ####
 # #Intercepts
@@ -440,7 +423,7 @@ values_plot$variable_p <- factor(values_plot$variable_p,
 
 
 
-pdf("figures/sim_splines_variances.pdf", width = 8, height = 3)
+pdf("sim_splines_variances.pdf", width = 8, height = 3)
 ggplot(data = data_plot) +
   geom_histogram(aes(x = value_p, y = ..density.., group = variable_p),
                  color = "#e9ecef", alpha=0.6, position = 'identity', bins = 15, fill = "cornflowerblue") +
@@ -474,13 +457,15 @@ mod_spline_6 <- fit_spline(data = data_spline,
 
 ### --- 7. Computing R-squared --- ####
 rm(var)
+source("functions/bayes_R2.R")
 m1 <- 6
 list_mod <- list(mod_spline_1, mod_spline_6, mod_spline_3, mod_spline_5,
                  mod_spline_2, mod_spline_4) 
 list_mod  %>%
-  sapply(., compbrms::bayes_R2, resp_names = c("yilr1", "yilr2")) %>%
+  sapply(., bayes_R2.CoDa, resp_names = c("yilr1", "yilr2")) %>%
   as.data.frame() %>%
   tidyr::pivot_longer(., cols = 1:6,  names_to = "fit", values_to = "R_squared")-> r_squared
+
 
 
 r_squared$fit <- as.factor(r_squared$fit)
@@ -497,12 +482,26 @@ r_squared %>%
 
 # Based on residuals
 list_mod %>%
-  sapply(., compbrms::bayes_R2, type = "res") %>%
+  sapply(., bayes_R2.CoDa, type = "res") %>%
   as.data.frame() %>%
   tidyr::pivot_longer(., cols = 1:m1,  names_to = "fit", values_to = "R_squared")-> r_squared_res
 
 r_squared_res$fit <- as.factor(r_squared_res$fit)
 levels(r_squared_res$fit) <- paste0("M", 1:m1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 r_squared_res %>%
@@ -560,15 +559,7 @@ dev.off()
 
 
 
-### --- 6. Computing LOO --- ####
-# loo_res <- list_mod %>%
-#   pblapply(., function(x){
-#     loo1 <- loo::loo(x, moment_match = TRUE, reloo = TRUE)
-#     loo1
-# })
-# 
-# loo_res %>% sapply(., function(x) x$estimates[3]) %>% round(., 3)
-
+### --- 6. Computing WAIC --- ####
 waic_res <- list_mod %>%
   pblapply(., function(x){
     waic1 <- waic(x)
