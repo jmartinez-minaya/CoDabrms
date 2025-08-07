@@ -117,18 +117,13 @@ fit <- function(data, covariate = TRUE, formula1 = "x1 + x2")
 
 n <- 100
 m <- 3
-# betas <- c(-1, 1, 1, 2,
-#            2 ,1, -1, 1,
-#            1, 2, -2, 1)
 
 betas <- c(1 ,-0.5, +1, -0.5,
            -0.5, 1, -1, 0,
            -2, 1, -0.5, -0.5)
 
 sigma <- c(0.1, 0.05, 0.08)
-#rho <- rep(0.9, m)
 rho <- c(0.5,0.2,0.8)
-#sigma <- c(0.5, 0.9, 1)
 
 
 set.seed(100)
@@ -190,70 +185,106 @@ data_test3$x3 <- rnorm(n)
 mod_test3_8 <- fit(data = data_test3, formula1 = "x1 + x2 + x3")
 mod_test3_10 <- fit(data = data_test3, formula1 = "x3")
 
-### --- 5. Computing the R-squared --- ####
-list_mod <- list(mod_test3_1, mod_test3_8, mod_test3_3, mod_test3_5, mod_test3_6, mod_test3_10)
+
+
+
+### --- 5. Computing R-squared (with mean and sd) --- ####
+
 m1 <- 6
+list_mod <- list(mod_test3_1, mod_test3_8, mod_test3_3, mod_test3_5, mod_test3_6, mod_test3_10)
+
+# --- BM-CoDa-R²: Variance-based ---
 list_mod %>%
   sapply(., bayes_R2.CoDa) %>%
   as.data.frame() %>%
-  tidyr::pivot_longer(., cols = all_of(1:m1),  names_to = "fit", values_to = "R_squared")-> r_squared
-
+  tidyr::pivot_longer(., cols = 1:m1, names_to = "fit", values_to = "R_squared") -> r_squared
 
 r_squared$fit <- as.factor(r_squared$fit)
 levels(r_squared$fit) <- paste0("M", 1:m1)
 
 r_squared %>%
   group_by(fit) %>%
-  summarise(m = mean(R_squared)) -> r_squared_mean
+  summarise(
+    m = mean(R_squared),
+    sd = sd(R_squared)
+  ) -> r_squared_mean
 
-
-r_squared %>%
-  group_by(fit) %>%
-  summarise(sd = sd(R_squared)) -> r_squared_sd
-
-
-# Based on residuals
+# --- BR-CoDa-R²: Residual-based ---
 list_mod %>%
   sapply(., bayes_R2.CoDa, type = "res") %>%
   as.data.frame() %>%
-  tidyr::pivot_longer(., cols = 1:m1,  names_to = "fit", values_to = "R_squared")-> r_squared_res
+  tidyr::pivot_longer(., cols = 1:m1, names_to = "fit", values_to = "R_squared") -> r_squared_res
 
 r_squared_res$fit <- as.factor(r_squared_res$fit)
 levels(r_squared_res$fit) <- paste0("M", 1:m1)
 
-
 r_squared_res %>%
   group_by(fit) %>%
-  summarise(m = mean(R_squared)) -> r_squared_res_mean
+  summarise(
+    m = mean(R_squared),
+    sd = sd(R_squared)
+  ) -> r_squared_res_mean
 
-r_squared_res %>%
-  group_by(fit) %>%
-  summarise(sd = sd(R_squared)) -> r_squared_res_sd
+# --- Combine both R-squared types ---
+r_squared_all <- cbind(r_squared_res, r_sq = "r_sq_res") %>%
+  rbind(., cbind(r_squared, r_sq = "r_sq_var"))
 
-#Join both r-squared
-r_squared <- cbind(r_squared_res, r_sq = "r_sq_res") %>% rbind(., cbind(r_squared, r_sq = "r_sq_var"))
-# r_squared$fit <- factor(r_squared_res$fit, labels = c(paste0("M", 1:m1)),
-#                             levels = c(paste0("V", 1:m1)))
-r_squared$r_sq <- factor(r_squared$r_sq, 
-                               levels = c("r_sq_res", "r_sq_var"),
-                               ordered = TRUE,
-                               labels = c(expression(paste("BR-CoDa-", R^2)), expression(paste("BM-CoDa-", R^2))))
+r_squared_all$r_sq <- factor(r_squared_all$r_sq,
+                             levels = c("r_sq_res", "r_sq_var"),
+                             ordered = TRUE,
+                             labels = c(expression(paste("BR-CoDa-", R^2)),
+                                        expression(paste("BM-CoDa-", R^2))))
+
+# --- Combine mean and sd summaries ---
+r_squared_mean_data <- rbind(
+  cbind(r_squared_res_mean, r_sq = 1),
+  cbind(r_squared_mean, r_sq = 2)
+)
+
+r_squared_mean_data$r_sq <- factor(r_squared_mean_data$r_sq,
+                                   levels = c(1, 2),
+                                   ordered = TRUE,
+                                   labels = c(expression(paste("BR-CoDa-", R^2)),
+                                              expression(paste("BM-CoDa-", R^2))))
+
+r_squared_mean_data$fit <- as.factor(r_squared_mean_data$fit)
+levels(r_squared_mean_data$fit) <- paste0("M", 1:m1)
 
 
+### --- 6. Computing WAIC --- ####
 
-r_squared_mean_data <- rbind(cbind(r_squared_res_mean, r_sq = 1),
-                               cbind(r_squared_mean, r_sq = 2))
+waic_res <- list_mod %>%
+  pblapply(., function(x) waic(x))
 
-
-r_squared_mean_data$r_sq <- factor(r_squared_mean_data$r_sq, 
-                                     levels = c(1, 2),
-                                     ordered = TRUE,
-                                     labels = c(expression(paste("BR-CoDa-", R^2)), 
-                                                expression(paste("BM-CoDa-", R^2))))
+waic_res1 <- waic_res %>%
+  sapply(., function(x) x$estimates["waic", "Estimate"]) %>%
+  round(., 3)
 
 
+### --- 7. Table for models (with mean and sd of R²) --- ####
 
-r_squared_mean_data
+# Format BR and BM R² as "mean (sd)"
+BR_values <- paste0(
+  round(r_squared_mean_data$m[1:m1], 3),
+  " (", round(r_squared_mean_data$sd[1:m1], 3), ")"
+)
+
+BM_values <- paste0(
+  round(r_squared_mean_data$m[(m1 + 1):(2 * m1)], 3),
+  " (", round(r_squared_mean_data$sd[(m1 + 1):(2 * m1)], 3), ")"
+)
+
+# Final model comparison table
+total_models <- data.frame(
+  Model = paste0("M", 1:m1),
+  WAIC  = waic_res1,
+  BR    = BR_values,
+  BM    = BM_values
+)
+
+# Display the table (optional)
+xtable::xtable(total_models, digits = 3)
+
 p1 <- r_squared %>%
   ggplot( aes(x = R_squared, fill = fit, y = ..density..)) +
   geom_histogram( color="#e9ecef", alpha = 0.9, position = 'identity', bins = 150)+ 
@@ -273,22 +304,9 @@ p1 <- r_squared %>%
 
 p1
 
+### --- 8. Posterior distributions in tables --- ####
 
-
-
-### --- 6. Computing waic --- ####
-waic_res <- list_mod %>%
-  pblapply(., function(x){
-    waic1 <- waic(x)
-    waic1
-  })
-waic_res1 <- waic_res %>% sapply(., function(x) x$estimates[3]) %>% round(., 3) 
-
-
-
-### --- 7. Posterior distributions in tables --- ####
-
-### ----- 7.1. Fixed effects --- ####
+### ----- 8.1. Fixed effects --- ####
 library(xtable)
 table_1 <- summary(mod_test3_1)
 table_1$fixed <- as.data.frame(table_1$fixed)
@@ -301,7 +319,7 @@ table_1_fixed <- cbind(real = betas, table_1_fixed)
 xtable::xtable(table_1_fixed[, c("real", "Estimate", "l-95% CI", "u-95% CI")], digits = 3)
 
 
-### ----- 7.2. Hyperparameters --- ####
+### ----- 8.2. Hyperparameters --- ####
 table_1$spec_pars <- as.data.frame(table_1$spec_pars)
 table_1$rescor_pars <- as.data.frame(table_1$rescor_pars)
 
@@ -309,7 +327,7 @@ table_1_hyper <- cbind(real = c(sigma, rho), rbind(table_1$spec_pars, table_1$re
 xtable::xtable(table_1_hyper[, c("real", "Estimate", "l-95% CI", "u-95% CI")], digits = 3)
 
 
-### --- 8. Plotting fitted against data --- ####
+### --- 9. Plotting fitted against data --- ####
 # Data_inverse
 z_comp <- ilrInv(data_test3[, c("yilr1", "yilr2", "yilr3")])
 z_comp <- z_comp %>% as.data.frame() 
@@ -334,23 +352,10 @@ z_comp_total$Category <- factor(z_comp_total$Category,
                          labels = c(paste0("Category-", 1:4)))
 
 
-# Plotting
-# pdf("figures/sim_linear_regression_fitted.pdf", width = 8, height = 7)
-# ggplot(z_comp_total, aes(x = prop_data, y = prop_pred)) +
-#   geom_smooth(method = lm, se = TRUE, level = 0.99) +
-#   geom_point() + 
-#   scale_y_continuous(breaks= scales::pretty_breaks()) +
-#   scale_x_continuous(breaks= scales::pretty_breaks()) +
-#   facet_wrap(~Category, scales = "free", labeller = label_parsed) +
-#   theme_bw() +
-#   xlab("Data proportions") +
-#   ylab("Predicted proportions")
-# dev.off()
-
-### --- 9. Plotting prior distributions --- ####
+### --- 10. Plotting prior distributions --- ####
 prior_summary(mod_test3_1)
 
-### ----- 9.1. Standard deviation --- ####
+### ----- 10.1. Standard deviation --- ####
 # student_t(3, 0, 2.5)     sigma            yilr1                       default
 # student_t(3, 0, 2.5)     sigma            yilr2                       default
 # student_t(3, 0, 3.1)     sigma            yilr3                       default
@@ -361,24 +366,15 @@ plot(x,y1)
 #lkj correlation cholesky
 
 
-### --- 10. Table for models --- ####
-r_squared_mean_data
-#sapply(list_mod, function(x){x[[1]][[1]][[1]][[1]]}) %>% unlist(.)
-total_models <- data.frame(Model = r_squared_mean_data$fit[1:6],
-                           waic   = waic_res1, 
-                           BR    = r_squared_mean_data[1:6, c("m")],
-                           BM    = r_squared_mean_data[7:12, c("m")])
-
-xtable::xtable(total_models, digits = 3)
 
 ### --- 11. Computing probabilities to compare --- ####
-lapply(paste0("M", 1:6), function(x){ r_squared %>% 
+lapply(paste0("M", 1:6), function(x){ r_squared_all %>% 
   dplyr::filter(fit == x) %>%
   dplyr::filter(r_sq == 'paste("BR-CoDa-", R^2)') %>%
   dplyr::select(R_squared) %>% pull(.)
 }) -> m_sim_br
 
-lapply(paste0("M", 1:6), function(x){ r_squared %>% 
+lapply(paste0("M", 1:6), function(x){ r_squared_all %>% 
     dplyr::filter(fit == x) %>%
     dplyr::filter(r_sq == 'paste("BM-CoDa-", R^2)') %>%
     dplyr::select(R_squared) %>% pull(.)
